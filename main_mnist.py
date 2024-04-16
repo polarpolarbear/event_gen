@@ -75,7 +75,11 @@ def random_pad_with_c(N_MNIST,max_n_events):
     
   indices = np.random.choice(n_event, max_n_events - n_event, replace=True)  
   padded_events[n_event:,:4] = N_MNIST[indices]
-  padded_events[n_event:,4] = 1
+
+
+  padded_events[:n_event,4] = 1
+  #padded_events[n_event:,4] = np.random.normal(0.25, 0.5, max_n_events-n_event)
+  #padded_events[:n_event,4] = np.random.normal(0.75, 0.5, n_event)
   return padded_events
 
 def random_pad_N_MIST(N_MNIST,max_n_events):
@@ -131,7 +135,7 @@ def create_loader(N_MNIST_dir, MNIST_dir,seed,batchsize, max_n_events,split):
         pad = int(ori_length < max_n_events)
         label_list.append(torch.tensor([int(class_path),pad,ori_length]))
 
-  np.save('nEvent_list.npy', nEvent_list)
+  #np.save('nEvent_list.npy', nEvent_list)
   #np.save('N_MNIST.npy', N_MNIST_list[0])
   merged_data = list(zip(N_MNIST_list, MNIST_list, inputmap_list, label_list))
   random.shuffle(merged_data)
@@ -181,12 +185,16 @@ def view_loader(data_loader):
       plt.title(data[-1])
       plt.show()
 
-def train_latent():  
+def train_latent(autoencoder_index):  
+  cwd = os.getcwd()
+  print("Current Directory is: ", cwd)
+  prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
 
-  N_MNIST_train_path = "./NMNIST_Train"
-  MNIST_train_path = "./MNIST_Train"
-  N_MNIST_test_path = "./NMNIST_Test"
-  MNIST_test_path = "./MNIST_Test"
+  #------------load data------------
+  N_MNIST_train_path = prefix +"/data/NMNIST_Train"
+  MNIST_train_path = prefix +"/data/MNIST_Train"
+  N_MNIST_test_path = prefix +"/data/NMNIST_Test"
+  MNIST_test_path = prefix +"/data/MNIST_Test"
   batchsize = 32
   max_n_events = 2150
   seed = 42
@@ -194,21 +202,19 @@ def train_latent():
   test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False)
   print(f"train_data_loader_size: {len(train_data_loader)*batchsize}")
   print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
+  print(f"max_n_events: {max_n_events}") 
 
-
-  # init models
+  #------------init model------------
   device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
-  cnn_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=4).to(device)
-  #cnn_encoder.load_state_dict(torch.load("cnn_encoder_18.pt",map_location='cuda:0'))
-  cnn_encoder.load_state_dict(torch.load("cnn_encoder_34_2.pt",map_location='cuda:0'))
+  event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device)
+  event_encoder.load_state_dict(torch.load(prefix+"/models/event_encoder_"+str(autoencoder_index)+".pt"))
   image_encoder = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=512).to(device)
-   
-  # init optimizer and loss
   params = list(image_encoder.parameters())
-  optimizer = torch.optim.AdamW(params, lr=0.0001)
+  optimizer = torch.optim.Adam(params, lr=0.0001)
   loss_MSE = torch.nn.MSELoss()
   
+  #------------train model------------
   train_loss_list = []
   test_loss_list = []
   min_loss = 99999
@@ -217,7 +223,7 @@ def train_latent():
     avg_train_loss = 0
     for [N_MNIST, MNIST, input_maps, label] in train_data_loader:    
       N_MNIST = N_MNIST.to(device)
-      N_MNIST_feat = cnn_encoder(N_MNIST)
+      N_MNIST_feat = event_encoder(N_MNIST)
       MNIST = MNIST.to(device)
       MNIST_feat = image_encoder(MNIST)     
       
@@ -234,7 +240,7 @@ def train_latent():
       avg_test_loss = 0
       for [N_MNIST, MNIST, input_maps, label] in test_data_loader:    
         N_MNIST = N_MNIST.to(device)
-        N_MNIST_feat = cnn_encoder(N_MNIST)
+        N_MNIST_feat = event_encoder(N_MNIST)
         MNIST = MNIST.to(device)
         MNIST_feat = image_encoder(MNIST)     
         
@@ -246,27 +252,24 @@ def train_latent():
     avg_test_loss = np.round(avg_test_loss,12)
     train_loss_list.append(avg_train_loss)
     test_loss_list.append(avg_test_loss)
+
     if ((avg_test_loss)) < min_loss:
+      torch.save(image_encoder.state_dict(), prefix+"/models/image_encoder_"+str(autoencoder_index)+".pt")
       min_loss = (avg_test_loss)
-      torch.save(image_encoder.state_dict(), "image_encoder_tmp.pt")
     pbar_training.close()
     print("epoch:", epoch,"loss_train:",avg_train_loss,"loss_test:",avg_test_loss,"loss_sum:",min_loss) 
-
-    if (epoch) % 25 == 0:
-      torch.save(image_encoder.state_dict(), "image_encoder_end.pt")
-      np.save("latent_loss_list_tmp.npy",[train_loss_list, test_loss_list])
+    np.save(prefix+"/loss/latent_loss_list_"+str(autoencoder_index)+".npy",[train_loss_list, test_loss_list])
 
 def train_auto(index):  
-
   cwd = os.getcwd()
   print("Current Directory is: ", cwd)
   prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
 
-  '''
-  N_MNIST_train_path = "./NMNIST_Train"
-  MNIST_train_path = "./MNIST_Train"
-  N_MNIST_test_path = "./NMNIST_Test"
-  MNIST_test_path = "./MNIST_Test"
+  #------------load data------------
+  N_MNIST_train_path = prefix +"/data//NMNIST_Train"
+  MNIST_train_path = prefix +"/data//MNIST_Train"
+  N_MNIST_test_path = prefix +"/data//NMNIST_Test"
+  MNIST_test_path = prefix +"/data//MNIST_Test"
   batchsize = 32
   max_n_events = 2150
   seed = 42
@@ -286,22 +289,22 @@ def train_auto(index):
   train_data_loader, test_data_loader= create_loader(N_MNIST_path,MNIST_path,seed,batchsize,max_n_events,split=True)
   print(f"train_data_loader_size: {len(train_data_loader)*batchsize}")
   print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
-
   
+  '''
 
-  # init models
+  #------------init model------------
   device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
-  event_encoder =  PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device).to(device)
+  event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device)
   event_painter = PointNetDecoder(max_n_events = max_n_events,input_dim=5).to(device)
-
-  # init optimizer and loss
   params = list(event_encoder.parameters()) + list(event_painter.parameters())
-  optimizer = torch.optim.AdamW(params, lr=0.0001)
+  optimizer = torch.optim.Adam(params, lr=0.0001)
   loss_sinkhorn = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+  
+  
+  #------------train model------------
   train_loss_list = []
   test_loss_list = []
-
   min_loss = 99999
   for epoch in range(30000):
     pbar_training = tqdm(total= (train_data_loader.batch_size*len(train_data_loader)) + (test_data_loader.batch_size*len(test_data_loader)))    
@@ -312,6 +315,7 @@ def train_auto(index):
       vis_feat = event_encoder(N_MNIST)
       predict_event = event_painter(vis_feat)
 
+      '''
       outputshape = torch.max(label[:,2])
       distance = (predict_event[:,:,4]-0.5)*(predict_event[:,:,4]-0.5)
       iDistance = torch.argsort(distance,dim=1,descending=True)
@@ -322,7 +326,8 @@ def train_auto(index):
         predict_event_new[i] = predict_event[i,iDistance[i],:]
 
       loss1 = loss_sinkhorn(predict_event_new,N_MNIST[:,:outputshape,:]).mean()
-
+      '''
+      loss1 = loss_sinkhorn(predict_event,N_MNIST).mean()
       optimizer.zero_grad()
       loss1.backward()
       optimizer.step()
@@ -338,6 +343,7 @@ def train_auto(index):
         vis_feat = event_encoder(N_MNIST)
         predict_event = event_painter(vis_feat)
 
+        ''' 
         outputshape = torch.max(label[:,2])
         distance = ((predict_event[:,:,4]-0.5)*(predict_event[:,:,4]-0.5))
         iDistance = torch.argsort(distance,dim=1,descending=True)
@@ -348,6 +354,10 @@ def train_auto(index):
           predict_event_new[i] = predict_event[i,iDistance[i],:]
 
         loss1 = loss_sinkhorn(predict_event_new,N_MNIST[:,:outputshape,:]).mean()
+        '''
+        
+     
+        loss1 = loss_sinkhorn(predict_event,N_MNIST).mean()
         pbar_training.update(test_data_loader.batch_size)
         avg_test_loss += loss1.item()/len(test_data_loader)
     avg_test_loss = np.round(avg_test_loss,12)
@@ -355,15 +365,15 @@ def train_auto(index):
     train_loss_list.append(avg_train_loss)
     test_loss_list.append(avg_test_loss)
     if ((avg_test_loss)) < min_loss:
-      torch.save(event_encoder.state_dict(), prefix+"/models/cnn_encoder_"+str(index)+".pt")
-      torch.save(event_painter.state_dict(), prefix+"/models/event_painter_"+str(index)+".pt")
-      np.save(prefix+"/loss/loss_list_"+str(index)+".npy",[train_loss_list, test_loss_list])
+      torch.save(event_encoder.state_dict(), prefix+"/models/event_encoder_"+str(index)+".pt")
+      torch.save(event_painter.state_dict(), prefix+"/models/event_decoder_"+str(index)+".pt")
+      
       min_loss = (avg_test_loss)
     pbar_training.close()
     print("epoch:", epoch,"loss_train:",avg_train_loss,"loss_test:",avg_test_loss,"loss_sum:",min_loss) 
+    np.save(prefix+"/loss/loss_list_"+str(index)+".npy",[train_loss_list, test_loss_list])
 
 def train_getsize():  
-
   N_MNIST_train_path = "./NMNIST_Train"
   MNIST_train_path = "./MNIST_Train"
   N_MNIST_test_path = "./NMNIST_Test"
@@ -459,6 +469,7 @@ def delPad_max(predicted,target,label,predicted_shape,marker):
   #target = target/torch.amax(target)
   return predicted,target
 
+'''
 def delPad_similarity(predicted, target, label, predicted_shape):
   max_n_events = predicted.shape[0]
   distance_matrix = torch.cdist(predicted, predicted)
@@ -513,34 +524,35 @@ def delPad_similarity(predicted, target, label, predicted_shape):
   
   new_target = target[:label[2]]
   return new_predicted,new_target
+'''
 
-def test_auto():   
-  N_MNIST_test_path = "./NMNIST_Test"
-  MNIST_test_path = "./MNIST_Test"
-  batchsize = 16
+def test_auto(autoencoder_index,size_predictor_index):   
+  cwd = os.getcwd()
+  print("Current Directory is: ", cwd)
+  prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
+
+  #------------load data------------
+  N_MNIST_test_path = prefix +"/data/NMNIST_Test"
+  MNIST_test_path = prefix +"/data/MNIST_Test"
+  batchsize = 32
   max_n_events = 2150
   seed = 42
-  random.seed(seed)
-  np.random.seed(seed)
+  test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False)
+  print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
+  print(f"max_n_events: {max_n_events}") 
   
   # ------------init models ------------
   device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
-  #cnn_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=4).to(device)
-
-  event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=4).to(device)
-  event_painter = PointNetDecoder(max_n_events = max_n_events,input_dim=4).to(device)
+  event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device)
+  event_decoder = PointNetDecoder(max_n_events = max_n_events,input_dim=5).to(device)
   size_predicter = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=1).to(device)
   
-  #------------load data------------
-  #cnn_encoder.load_state_dict(torch.load("cnn_encoder_16.pt",map_location='cuda:0'))
-  event_painter.load_state_dict(torch.load("event_painter_34.pt",map_location='cuda:0'))
-  event_encoder.load_state_dict(torch.load("cnn_encoder_34.pt",map_location='cuda:0'))
-  size_predicter.load_state_dict(torch.load("size_predicter_26.pt",map_location='cuda:0'))
-  
-  loss_list = np.load("loss_list_34.npy")
-  test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False)
-  print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
+  #------------load model------------
+  event_encoder.load_state_dict(torch.load(prefix+"/models/event_encoder_"+str(autoencoder_index)+".pt",map_location='cuda:0'))
+  event_decoder.load_state_dict(torch.load(prefix+"/models/event_decoder_"+str(autoencoder_index)+".pt",map_location='cuda:0'))
+  size_predicter.load_state_dict(torch.load(prefix+"/models/size_predicter_"+str(size_predictor_index)+".pt",map_location='cuda:0'))  
+  loss_list = np.load(prefix+"/loss/loss_list_"+str(autoencoder_index)+".npy")
 
   #------------run model------------
   predicted_nEvent_list = []
@@ -553,7 +565,7 @@ def test_auto():
       MNIST = MNIST.to(device)
       
       vis_feat = event_encoder(N_MNIST)
-      predict_event = event_painter(vis_feat)
+      predict_event = event_decoder(vis_feat)
 
       #cal #event for target and predicted events
       predicted_shape = (size_predicter(MNIST)*max_n_events).to(torch.int)
@@ -583,7 +595,7 @@ def test_auto():
   plt.plot(predicted_nEvent_list[sorted_indices],'b.',markersize=1,alpha=0.3)    
   plt.plot(target_nEvent_list[sorted_indices],'g.',markersize=1,alpha=0.3)    
   plt.ylabel("nEvent")
-  plt.savefig('nEvent.png')  
+  plt.savefig(prefix + "/output/nEvent.png")  
   plt.figure().clear()
   print('nEvent.png DONE')
   
@@ -630,7 +642,7 @@ def test_auto():
     #plt.legend()
     ii += 5
   #plt.tight_layout()
-  plt.savefig('parameter.png')
+  plt.savefig(prefix + '/output/parameter.png')
   plt.figure().clear()
   print('parameter.png DONE')
 
@@ -653,7 +665,7 @@ def test_auto():
     plt.title("Real")
     ii += 2
   #plt.tight_layout()
-  plt.savefig('histogram_new.png')
+  plt.savefig(prefix + '/output/histogram_new.png')
   plt.figure().clear()
   print('histogram_new.png DONE')
       
@@ -665,32 +677,35 @@ def test_auto():
   plt.xlim([0,100])
   plt.legend()
   plt.tight_layout()
-  plt.savefig('loss.png')
+  plt.savefig(prefix + '/output/loss.png')
   print('loss.png DONE')
   
-def test_latent():   
+def test_latent(autoencoder_index,size_predictor_index):   
+  cwd = os.getcwd()
+  print("Current Directory is: ", cwd)
+  prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
+  
+  #------------load data------------
   N_MNIST_test_path = "./NMNIST_Test"
   MNIST_test_path = "./MNIST_Test"
-  batchsize = 16
+  batchsize = 32
   max_n_events = 2150
   seed = 0
+  test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False)
+  print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
 
   # ------------init models ------------
   device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
-  #cnn_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=4).to(device)
-  event_painter = PointNetDecoder(max_n_events = max_n_events,input_dim=4).to(device)
+  event_decoder = PointNetDecoder(max_n_events = max_n_events,input_dim=4).to(device)
   image_encoder = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=512).to(device)
   size_predicter = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=1).to(device)
 
-  #------------load data------------
-  #cnn_encoder.load_state_dict(torch.load("cnn_encoder_16.pt",map_location='cuda:0'))
-  event_painter.load_state_dict(torch.load("event_painter_34_2.pt",map_location='cuda:0'))
-  image_encoder.load_state_dict(torch.load("image_encoder_34_2.pt",map_location='cuda:0'))
-  size_predicter.load_state_dict(torch.load("size_predicter_26.pt",map_location='cuda:0'))
-  loss_list = np.load("latent_loss_list_19.npy")
-  test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False)
-  print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
+  #------------load model------------
+  event_decoder.load_state_dict(torch.load(prefix+"/models/event_decoder_"+str(autoencoder_index)+".pt"))
+  size_predicter.load_state_dict(torch.load(prefix+"/models/size_predicter_"+str(size_predictor_index)+".pt"))
+  image_encoder.load_state_dict(torch.load(prefix+"/models/image_encoder_"+str(size_predictor_index)+".pt"))
+  loss_list = np.load(prefix+"/loss/latent_loss_list_"+str(autoencoder_index)+".npy")
 
   #------------run model------------
   predicted_nEvent_list = []
@@ -703,7 +718,7 @@ def test_latent():
       MNIST = MNIST.to(device)
 
       vis_feat = image_encoder(MNIST)
-      predict_event = event_painter(vis_feat)
+      predict_event = event_decoder(vis_feat)
 
       #cal #event for target and predicted events
       predicted_shape = (size_predicter(MNIST)*max_n_events).to(torch.int)
@@ -838,13 +853,16 @@ def test_latent():
 
 
 if __name__ == "__main__":
-  index = 50
-  train_auto(index)
-  #train_latent()
-  #train_getsize()
-  #test_auto()
-  #test_latent()
-  #test_new()
+  autoencoder_index = 50
+  size_predictor_index = 26
+
+  #train_getsize(size_predictor_index)
+  #train_auto(autoencoder_index)
+  #train_latent(autoencoder_index)
+
+  test_auto(autoencoder_index,size_predictor_index)
+  #test_latent(autoencoder_index,size_predictor_index)
+
   
 
 

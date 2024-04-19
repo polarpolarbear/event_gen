@@ -225,7 +225,7 @@ def train_auto(index):
   N_MNIST_test_path = prefix +"/data//NMNIST_Test"
   MNIST_test_path = prefix +"/data//MNIST_Test"
   batchsize = 32
-  max_n_events = 3324
+  max_n_events = 3333
   seed = 42
   train_data_loader = create_loader(N_MNIST_train_path,MNIST_train_path,seed,batchsize,max_n_events,split=False,save_stat=True)
   test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False,save_stat=False)
@@ -247,14 +247,14 @@ def train_auto(index):
   '''
 
   #------------init model------------
-  device = torch.device("cuda:3") if torch.cuda.is_available() else torch.device("cpu")
+  device = torch.device("cuda:2") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
   event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device)
   event_painter = PointNetDecoder(max_n_events = max_n_events,input_dim=5).to(device)
   params = list(event_encoder.parameters()) + list(event_painter.parameters())
   optimizer = torch.optim.Adam(params, lr=0.0001)
   loss_sinkhorn = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
-  
+  model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
   
   #------------train model------------
   train_loss_list = []
@@ -283,7 +283,11 @@ def train_auto(index):
       '''
       loss1 = loss_sinkhorn(predict_event,N_MNIST).mean()
       optimizer.zero_grad()
-      loss1.backward()
+
+      with amp.scale_loss(loss, optimizer) as scaled_loss:
+        scaled_loss.backward()
+
+      #loss1.backward()
       optimizer.step()
       pbar_training.update(train_data_loader.batch_size)
       avg_train_loss += loss1.item()/len(train_data_loader)

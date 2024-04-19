@@ -10,13 +10,22 @@ import random
 from tqdm import tqdm
 from geomloss import SamplesLoss  # See also ImagesLoss, VolumesLoss
 import cv2
+from dv import AedatFile
 
-torch.cuda.empty_cache()
+def load_Aedat(aedat_path):
+    with AedatFile(aedat_path) as f:
+        #f._name_info_map['events']['tsOffset']
+        events = np.hstack([packet for packet in f['events'].numpy()])
+        t, x, y, p = events['timestamp'], events['x'], events['y'], events['polarity']
+        #print("duration[min]: " + str((t[-1]-t[0])/1E6/60))
+        #print("load_Aedat completed")
+        t = (t-t[0])/1E6
+        x = x/128
+        y = y/128
 
-def modify_file_name(file_path):
-    nr = int(file_path.split('.')[0])
-    new_path = str(nr-1)+".jpg"
-    return new_path
+        index = np.abs(t-0.05).argmin()
+        res = np.array([x[0:index],y[0:index],t[0:index],p[0:index]])
+    return np.transpose(res)
 
 def event2histogram_tri(event_stream):
     event_stream = event_stream.numpy()
@@ -45,7 +54,7 @@ def random_pad_with_c(N_MNIST,max_n_events):
   #padded_events[:n_event,4] = np.random.normal(0.75, 0.5, n_event)
   return padded_events
 
-def create_loader(N_MNIST_dir, MNIST_dir,seed,batchsize, max_n_events,split,save_stat):
+def create_loader(N_MNIST_dir, MNIST_dir,seed,batchsize, max_n_events,split):
   if seed != 0:
     random.seed(seed)
   grayscale_transform = transforms.Grayscale()
@@ -56,29 +65,31 @@ def create_loader(N_MNIST_dir, MNIST_dir,seed,batchsize, max_n_events,split,save
   label_list = []
 
   nEvent_list = []
+  max_time_list = []
   for class_path in class_path_list:
+      print(class_path)
       N_MNIST_class_path = os.path.join(N_MNIST_dir, class_path)
-      MNIST_class_path = os.path.join(MNIST_dir, class_path)
+      #MNIST_class_path = os.path.join(MNIST_dir, class_path)
       file_path_list = os.listdir(N_MNIST_class_path)
       for file_path in file_path_list:        
         N_MNIST_file_path = os.path.join(N_MNIST_class_path, file_path)
-        N_MNIST = read_event(N_MNIST_file_path)
+        N_MNIST = load_Aedat(N_MNIST_file_path)
         ori_length = N_MNIST.shape[0]
         nEvent_list.append(ori_length)
+        max_time_list.append(N_MNIST[-1,2])
+        #if ori_length > max_n_events:
+        #  print(N_MNIST_file_path)
+        #  continue
         
-        if ori_length > max_n_events:
-          print(N_MNIST_file_path)
-          continue
-        
-        N_MNIST = random_pad_with_c(N_MNIST,max_n_events)
-        N_MNIST = torch.tensor(N_MNIST).to(torch.float)
-        N_MNIST_list.append(N_MNIST)
+        #N_MNIST = random_pad_with_c(N_MNIST,max_n_events)
+        #N_MNIST = torch.tensor(N_MNIST).to(torch.float)
+        N_MNIST_list.append(1)
 
-        MNIST_file_path = os.path.join(MNIST_class_path, modify_file_name(file_path))
-        MNIST = cv2.imread(MNIST_file_path)
-        MNIST = cv2.resize(MNIST, (34, 34), interpolation=cv2.INTER_LINEAR)/255 
-        MNIST = grayscale_transform(torch.tensor(MNIST).permute(2,0,1)).to(torch.float)
-        MNIST_list.append(MNIST)
+        #MNIST_file_path = os.path.join(MNIST_class_path, modify_file_name(file_path))
+        #MNIST = cv2.imread(MNIST_file_path)
+        #MNIST = cv2.resize(MNIST, (34, 34), interpolation=cv2.INTER_LINEAR)/255 
+        #MNIST = grayscale_transform(torch.tensor(MNIST).permute(2,0,1)).to(torch.float)
+        MNIST_list.append(1)
 
         #event_histogram_data = torch.tensor(event2histogram_alt(N_MNIST))
         #input_map = torch.cat((MNIST, event_histogram_data), dim=0).to(torch.float32)
@@ -86,11 +97,11 @@ def create_loader(N_MNIST_dir, MNIST_dir,seed,batchsize, max_n_events,split,save
 
         inputmap_list.append(1)
         pad = int(ori_length < max_n_events)
-        label_list.append(torch.tensor([int(class_path),pad,ori_length]))
+        #label_list.append(torch.tensor([int(class_path),pad,ori_length]))
+        label_list.append(1)
 
-  if save_stat == True:
-    np.save('nEvent_list.npy', nEvent_list)
-
+  np.save('nEvent_list.npy', nEvent_list)
+  np.save('maxtime_list.npy', max_time_list)
   merged_data = list(zip(N_MNIST_list, MNIST_list, inputmap_list, label_list))
   random.shuffle(merged_data)
 
@@ -129,7 +140,7 @@ def view_loader(data_loader):
       data = data_loader.dataset[index]
       plt.subplot(1,2,1)
       image = np.zeros((34, 34, 3)) 
-      histogram = np.transpose(event2histogram_mono(data[0]), (1, 2, 0))
+      histogram = np.transpose(event2histogram_tri(data[0]), (1, 2, 0))
       image[:,:,0:2] = histogram
       plt.imshow(image, cmap='magma')
       plt.title(data[-1])
@@ -152,14 +163,14 @@ def train_latent(autoencoder_index):
   batchsize = 32
   max_n_events = 2150
   seed = 42
-  train_data_loader = create_loader(N_MNIST_train_path,MNIST_train_path,seed,batchsize,max_n_events,split=False,save_stat=True)
-  test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False,save_stat=False)
+  train_data_loader = create_loader(N_MNIST_train_path,MNIST_train_path,seed,batchsize,max_n_events,split=False)
+  test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False)
   print(f"train_data_loader_size: {len(train_data_loader)*batchsize}")
   print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
   print(f"max_n_events: {max_n_events}") 
 
   #------------init model------------
-  device = torch.device("cuda:3") if torch.cuda.is_available() else torch.device("cpu")
+  device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
   event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device)
   event_encoder.load_state_dict(torch.load(prefix+"/models/event_encoder_"+str(autoencoder_index)+".pt"))
@@ -220,15 +231,11 @@ def train_auto(index):
   prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
 
   #------------load data------------
-  N_MNIST_train_path = prefix +"/data//NMNIST_Train"
-  MNIST_train_path = prefix +"/data//MNIST_Train"
-  N_MNIST_test_path = prefix +"/data//NMNIST_Test"
-  MNIST_test_path = prefix +"/data//MNIST_Test"
+  N_CIFAR_path = prefix +"/data_new/CIFAR10DVS"
   batchsize = 32
-  max_n_events = 3324
+  max_n_events = 2150
   seed = 42
-  train_data_loader = create_loader(N_MNIST_train_path,MNIST_train_path,seed,batchsize,max_n_events,split=False,save_stat=True)
-  test_data_loader = create_loader(N_MNIST_test_path,MNIST_test_path,seed,batchsize,max_n_events,split=False,save_stat=False)
+  train_data_loader,test_data_loader = create_loader(N_CIFAR_path,"none",seed,batchsize,max_n_events,split=True)
   print(f"train_data_loader_size: {len(train_data_loader)*batchsize}")
   print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
   print(f"max_n_events: {max_n_events}") 
@@ -247,7 +254,7 @@ def train_auto(index):
   '''
 
   #------------init model------------
-  device = torch.device("cuda:3") if torch.cuda.is_available() else torch.device("cpu")
+  device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
   event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device)
   event_painter = PointNetDecoder(max_n_events = max_n_events,input_dim=5).to(device)
@@ -601,7 +608,7 @@ def test_latent(autoencoder_index,size_predictor_index):
 
   #------------load model------------
   event_decoder.load_state_dict(torch.load(prefix+"/models/event_decoder_"+str(autoencoder_index)+".pt"))
-  size_predicter.load_state_dict(torch.load(prefix+"/models/size_predictor_"+str(size_predictor_index)+".pt"))
+  size_predicter.load_state_dict(torch.load(prefix+"/models/size_predicter_"+str(size_predictor_index)+".pt"))
   image_encoder.load_state_dict(torch.load(prefix+"/models/image_encoder_"+str(size_predictor_index)+".pt"))
   loss_list = np.load(prefix+"/loss/latent_loss_list_"+str(autoencoder_index)+".npy")
 
@@ -751,14 +758,14 @@ def test_latent(autoencoder_index,size_predictor_index):
 
 
 if __name__ == "__main__":
-  autoencoder_index = 51
+  autoencoder_index = 100
   size_predictor_index = 50
 
   #train_getsize(size_predictor_index)
   train_auto(autoencoder_index)
   #train_latent(autoencoder_index)
 
-  #test_auto(index,size_predictor_index)
+  #test_auto(autoencoder_index,size_predictor_index)
   #test_latent(autoencoder_index,size_predictor_index)
 
   

@@ -85,7 +85,7 @@ class imageEncoder(nn.Module):
         return x
 
 class PointNetEncoder(nn.Module):
-  def __init__(self, hidden_dim = 512, max_n_events = 390, input_dim=4):
+  def __init__(self, hidden_dim, max_n_events, input_dim):
       super().__init__()
       self.hidden_dim = hidden_dim
       self.max_n_events = max_n_events
@@ -113,17 +113,17 @@ class PointNetEncoder(nn.Module):
       return x # output shape: (batch, dim)
 
 class PointNetDecoder(nn.Module):
-  def __init__(self, hidden_dim = 512, max_n_events = 390, input_dim=4):
+  def __init__(self, hidden_dim, max_n_events , input_dim):
       super().__init__()
       self.input_dim = input_dim
       self.hidden_dim = hidden_dim
       self.max_n_events = max_n_events
       self.fc = nn.Sequential(
-          nn.Linear(self.hidden_dim, 512),
+          nn.Linear(self.hidden_dim, self.hidden_dim),
           nn.ReLU(),
-          nn.Linear(512, 512),
+          nn.Linear(self.hidden_dim, self.hidden_dim),
           nn.ReLU(),
-          nn.Linear(512, self.max_n_events*input_dim),
+          nn.Linear(self.hidden_dim, self.max_n_events*input_dim),
           nn.ReLU(),
           nn.Linear(self.max_n_events*input_dim, self.max_n_events*input_dim),
           nn.Sigmoid(),

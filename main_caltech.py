@@ -12,6 +12,37 @@ from geomloss import SamplesLoss  # See also ImagesLoss, VolumesLoss
 import cv2
 from dv import AedatFile
 
+
+def resize_with_padding(image_path, output_size):
+    # Read the image
+    image = cv2.imread(image_path)
+    
+    # Compute aspect ratio
+    aspect_ratio = image.shape[1] / image.shape[0]
+    
+    # Calculate the new size while preserving aspect ratio
+    if aspect_ratio > 1:  # landscape orientation
+        new_width = output_size
+        new_height = round(output_size / aspect_ratio)
+    else:  # portrait orientation
+        new_width = round(output_size * aspect_ratio)
+        new_height = output_size
+    
+    # Resize the image
+    resized_image = cv2.resize(image, (new_width, new_height))
+    
+    # Create a new blank image with the desired output size
+    padded_image = np.zeros((output_size, output_size, 3), dtype=np.uint8)
+    
+    # Calculate position to paste resized image with zero padding
+    x_offset = (output_size - new_width) // 2
+    y_offset = (output_size - new_height) // 2
+    
+    # Paste resized image onto the blank image with zero padding
+    padded_image[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = resized_image
+    
+    return padded_image
+
 def event2histogram_mono(event_stream):
     event_stream = event_stream.numpy()
     hist = np.zeros((128, 128))
@@ -70,7 +101,7 @@ def create_loader(N_MNIST_dir, MNIST_dir,batchsize, max_n_events,split):
       file_path_list = os.listdir(N_MNIST_class_path)
       for file_path in file_path_list:        
         N_MNIST_file_path = os.path.join(N_MNIST_class_path, file_path)
-        N_MNIST = read_mnist_file_by_time(N_MNIST_file_path, np.dtype([("x", int), ("y", int), ("t", int), ("p", int)]), False, 200000-100000/8, 200000)
+        N_MNIST = read_mnist_file_by_time(N_MNIST_file_path, np.dtype([("x", int), ("y", int), ("t", int), ("p", int)]), False, 200000-100000/4, 200000)
 
         ori_length = N_MNIST.shape[0]
         if ori_length > max_n_events:
@@ -88,10 +119,10 @@ def create_loader(N_MNIST_dir, MNIST_dir,batchsize, max_n_events,split):
 
 
         MNIST_file_path = os.path.join(MNIST_class_path, modify_file_name(file_path))
-        MNIST = cv2.imread(MNIST_file_path)
-        MNIST = cv2.resize(MNIST, (240, 240), interpolation=cv2.INTER_LINEAR)/255 
+        MNIST = resize_with_padding(MNIST_file_path, 240)/255  
         MNIST = grayscale_transform(torch.tensor(MNIST).permute(2,0,1)).to(torch.float)
         MNIST_list.append(MNIST)
+        #MNIST_list.append(1)
 
         pad = int(ori_length < max_n_events)
         label_list.append(torch.tensor([iClass,pad,ori_length]))
@@ -235,7 +266,7 @@ def train_auto(index):
   #------------load data------------
   N_CIFAR_path = prefix +"/data/Caltech101DVS"
   batchsize = 32
-  max_n_events = 4096
+  max_n_events = 5000
   train_data_loader,test_data_loader = create_loader(N_CIFAR_path,"none",batchsize,max_n_events,split=True)
   print(f"train_data_loader_size: {len(train_data_loader)*batchsize}")
   print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
@@ -436,7 +467,7 @@ def test_auto(autoencoder_index,size_predictor_index):
   N_CIFAR_path = prefix +"/data/Caltech101DVS"
   CIFAR_path = prefix +"/data/Caltech101"
   batchsize = 32
-  max_n_events = 4096
+  max_n_events = 5000
   train_data_loader,test_data_loader = create_loader(N_CIFAR_path,CIFAR_path,batchsize,max_n_events,split=True)
   print(f"train_data_loader_size: {len(train_data_loader)*batchsize}")
   print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")

@@ -14,13 +14,9 @@ from dv import AedatFile
 
 
 def resize_with_padding(image_path, output_size):
-    # Read the image
     image = cv2.imread(image_path)
-    
-    # Compute aspect ratio
     aspect_ratio = image.shape[1] / image.shape[0]
     
-    # Calculate the new size while preserving aspect ratio
     if aspect_ratio > 1:  # landscape orientation
         new_width = output_size
         new_height = round(output_size / aspect_ratio)
@@ -43,35 +39,67 @@ def resize_with_padding(image_path, output_size):
     
     return padded_image
 
+def move_event(event_stream):
+    event_stream = event_stream.numpy()
+    hist = np.zeros((240, 240))
+    xx = np.floor((event_stream[:,0]*240)).astype(int)
+    yy= np.floor((event_stream[:,1]*240)).astype(int)
+    np.add.at(hist, (yy, xx), 1)
+
+    threshold_value = 0
+    binary_image = (hist > threshold_value).astype(np.float32)
+    contours, _ = cv2.findContours(binary_image.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if len(contours) > 0:
+        largest_contour = max(contours, key=cv2.contourArea)
+        M = cv2.moments(largest_contour)
+        
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+        else:
+            cx, cy = 0, 0
+    else:
+        cx, cy = 0, 0
+    # Calculate the shift
+    shift_x = binary_image.shape[1] // 2 - cx
+    shift_y = binary_image.shape[0] // 2 - cy
+
+    # Create a new centered image
+    centered_image = np.roll(frame, (shift_x, shift_y), axis=(2, 1))
+    
+    return centered_image
+
 def event2histogram_mono(event_stream):
     event_stream = event_stream.numpy()
-    hist = np.zeros((128, 128))
-    xx = np.floor((event_stream[:,0]*128)).astype(int)
-    yy= np.floor((event_stream[:,1]*128)).astype(int)
+    hist = np.zeros((240, 180))
+    xx = np.floor((event_stream[:,0]*240)).astype(int)
+    yy= np.floor((event_stream[:,1]*180)).astype(int)
     pp = np.floor((event_stream[:,3])).astype(int)
     for p in range(3):
       ii = np.where(pp == p)
-      np.add.at(hist, (yy[ii], xx[ii]), 1)
-    return hist
+      np.add.at(hist, (xx[ii], yy[ii]), 1)
+    histogram_alt = np.transpose(hist, (1, 0))
+    return histogram_alt
 
 def event2histogram_tri(event_stream):
     event_stream = event_stream.numpy()
-    hist = np.zeros((128, 128, 3))
-    xx = np.floor((event_stream[:,0]*128)).astype(int)
-    yy= np.floor((event_stream[:,1]*128)).astype(int)
+    hist = np.zeros((240, 180, 3))
+    xx = np.floor((event_stream[:,0]*240)).astype(int)
+    yy= np.floor((event_stream[:,1]*180)).astype(int)
     pp = np.floor((event_stream[:,3])).astype(int)
     for p in range(3):
-      tmp = np.zeros((128, 128))
+      tmp = np.zeros((240, 180))
       ii = np.where(pp == p)
-      np.add.at(tmp, (yy[ii], xx[ii]), 1)
+      np.add.at(tmp, (xx[ii], yy[ii]), 1)
       hist[:,:,p] = tmp
-    return hist
+    histogram_alt = np.transpose(hist, (1, 0, 2))
+    return histogram_alt
+
 
 def modify_file_name(file_path):
     nr = file_path.split('.')[0]
     new_path = nr +".jpg"
     return new_path
-
 
 def random_pad_with_c(N_MNIST,max_n_events):
   n_event = N_MNIST.shape[0]
@@ -116,10 +144,15 @@ def create_loader(N_MNIST_dir, MNIST_dir,batchsize, max_n_events,split):
         #plt.imshow(histogram, cmap='magma')
         #plt.savefig('tmp.jpg')
 
-
-
         MNIST_file_path = os.path.join(MNIST_class_path, modify_file_name(file_path))
         MNIST = resize_with_padding(MNIST_file_path, 240)/255  
+
+        mean_per_channel = np.mean(MNIST, axis=(0, 1))
+        std_per_channel = np.std(MNIST, axis=(0, 1))
+
+        #MNIST[:,:,0] = (MNIST[:,:,0]-mean_per_channel[0])/std_per_channel[0]
+        #MNIST[:,:,1] = (MNIST[:,:,1]-mean_per_channel[1])/std_per_channel[1]
+        #MNIST[:,:,2] = (MNIST[:,:,2]-mean_per_channel[2])/std_per_channel[2]
         MNIST = grayscale_transform(torch.tensor(MNIST).permute(2,0,1)).to(torch.float)
         MNIST_list.append(MNIST)
         #MNIST_list.append(1)
@@ -265,9 +298,10 @@ def train_auto(index):
 
   #------------load data------------
   N_CIFAR_path = prefix +"/data/Caltech101DVS"
+  CIFAR_path = prefix +"/data/Caltech101"
   batchsize = 32
   max_n_events = 5000
-  train_data_loader,test_data_loader = create_loader(N_CIFAR_path,"none",batchsize,max_n_events,split=True)
+  train_data_loader,test_data_loader = create_loader(N_CIFAR_path,CIFAR_path,batchsize,max_n_events,split=True)
   print(f"train_data_loader_size: {len(train_data_loader)*batchsize}")
   print(f"test_data_loader_size: {len(test_data_loader)*batchsize}")
   print(f"max_n_events: {max_n_events}") 
@@ -321,6 +355,9 @@ def train_auto(index):
       loss1 = loss_sinkhorn(predict_event_new,N_MNIST[:,:outputshape,:]).mean()
       '''
       loss1 = loss_sinkhorn(predict_event,N_MNIST).mean()
+
+      loss2 = loss_sinkhorn(predict_event[:,:,:2],N_MNIST[:,:,:2]).mean()
+      loss1 = loss1 +loss2
       optimizer.zero_grad()
       loss1.backward()
       optimizer.step()
@@ -350,6 +387,8 @@ def train_auto(index):
         '''
         
         loss1 = loss_sinkhorn(predict_event,N_MNIST).mean()
+        loss2 = loss_sinkhorn(predict_event[:,:,:2],N_MNIST[:,:,:2]).mean()
+        loss1 = loss1 +loss2
         pbar_training.update(test_data_loader.batch_size)
         avg_test_loss += loss1.item()/len(test_data_loader)
     avg_test_loss = np.round(avg_test_loss,12)
@@ -381,7 +420,7 @@ def train_getsize(index):
   print(f"max_n_events: {max_n_events}") 
 
   # ------------init models ------------
-  device = torch.device("cuda:2") if torch.cuda.is_available() else torch.device("cpu")
+  device = torch.device("cuda:3") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
   size_predictor = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=1).to(device)
   optimizer = torch.optim.Adam(size_predictor.parameters(), lr=0.001)
@@ -502,8 +541,8 @@ def test_auto(autoencoder_index,size_predictor_index):
       #cal #event for target and predicted events
       predicted_shape = (size_predicter(MNIST)*max_n_events).to(torch.int)
       predicted_nEvent_list.extend(predicted_shape.tolist())
-      target_nEvent = label[:,-1]
-      target_nEvent_list.extend(target_nEvent.tolist())
+      target_shape = label[:,-1]
+      target_nEvent_list.extend(target_shape.tolist())
 
       pbar_training.update(test_data_loader.batch_size)
     pbar_training.close()
@@ -511,6 +550,7 @@ def test_auto(autoencoder_index,size_predictor_index):
   N_MNIST = N_MNIST.cpu()
   label = label.cpu()
   predicted_shape = predicted_shape.cpu()
+  target_shape = target_shape.cpu()
   
   # ------------plot nEvent------------ 
   plt.figure()
@@ -527,7 +567,7 @@ def test_auto(autoencoder_index,size_predictor_index):
   plt.plot(predicted_nEvent_list[sorted_indices],'b.',markersize=1,alpha=0.3)    
   plt.plot(target_nEvent_list[sorted_indices],'g.',markersize=1,alpha=0.3)    
   plt.ylabel("nEvent")
-  plt.savefig(prefix + "/output/nEvent.png")  
+  plt.savefig("nEvent.png")  
   plt.figure().clear()
   print('nEvent.png DONE')
 
@@ -536,7 +576,7 @@ def test_auto(autoencoder_index,size_predictor_index):
   ii = 1
   plt.figure()
   for item in range(n):
-    [predicted,target] = delPad_max(predict_event[item] ,N_MNIST[item],label[item],predicted_shape[item],0.5)
+    [predicted,target] = delPad_max(predict_event[item] ,N_MNIST[item],label[item],target_shape[item],0.5)
 
     plt.subplot(n,5,ii)
     plt.plot(target[:,0],'g.',markersize=1,alpha=0.3, label="Real_X")
@@ -575,7 +615,7 @@ def test_auto(autoencoder_index,size_predictor_index):
     #plt.legend()
     ii += 5
   #plt.tight_layout()
-  plt.savefig(prefix + '/output/parameter.png')
+  plt.savefig("parameter.png")
   plt.figure().clear()
   print('parameter.png DONE')
 
@@ -583,22 +623,22 @@ def test_auto(autoencoder_index,size_predictor_index):
   plt.figure()
   ii = 1
   for item in range(n):
-    [predicted,target] = delPad_max(predict_event[item] ,N_MNIST[item],label[item],predicted_shape[item],0.5)
+    [predicted,target] = delPad_max(predict_event[item] ,N_MNIST[item], label[item],target_shape[item],0.5)
 
     plt.subplot(n,2,ii)
-    histogram_alt = event2histogram_tri(predicted)
+    histogram_alt = event2histogram_mono(predicted)
     plt.imshow(histogram_alt,cmap='viridis')
     #plt.colorbar()
     plt.title("Generated")
 
     plt.subplot(n,2,ii+1)
-    histogram = event2histogram_tri(target)
+    histogram = event2histogram_mono(target)
     plt.imshow(histogram,cmap='viridis')
     #plt.colorbar()
     plt.title("Real")
     ii += 2
   #plt.tight_layout()
-  plt.savefig(prefix + '/output/histogram_new.png')
+  plt.savefig("histogram_new.png")
   plt.figure().clear()
   print('histogram_new.png DONE')
       
@@ -610,7 +650,7 @@ def test_auto(autoencoder_index,size_predictor_index):
   plt.xlim([0,100])
   plt.legend()
   plt.tight_layout()
-  plt.savefig(prefix + '/output/loss.png')
+  plt.savefig("loss.png")
   print('loss.png DONE')
   
 def test_latent(autoencoder_index,size_predictor_index):   
@@ -787,14 +827,15 @@ def test_latent(autoencoder_index,size_predictor_index):
 
 
 if __name__ == "__main__":
-  autoencoder_index = 201
-  size_predictor_index = 201
+  autoencoder_index = 203
+  size_predictor_index = 202
   random.seed(42)
   np.random.seed(42)
 
   #train_getsize(size_predictor_index)
   #train_auto(autoencoder_index)
   #train_latent(autoencoder_index)
+
 
   test_auto(autoencoder_index,size_predictor_index)
   #test_latent(autoencoder_index,size_predictor_index)

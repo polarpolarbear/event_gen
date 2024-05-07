@@ -209,7 +209,7 @@ def read_mnist_file_by_time(
 
     data = np.zeros((len(x),4))
     data[:,0] = x/240
-    data[:,1] = y/240
+    data[:,1] = y/180
     data[:,2] = (t-t_min)/(t_max-t_min)
     data[:,3] = p
 

@@ -5,7 +5,7 @@ import tonic
 import pickle
 
 
-path = './caltech_new_nEvent.pickle'
+path = './caltech_max_x.pickle'
 
 with open(path, 'rb') as handle:
     data = pickle.load(handle)

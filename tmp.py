@@ -38,7 +38,7 @@ def resize_with_padding(image_path, output_size):
     return padded_image
 
 # Example usage:
-image_path = "/root/event_gen-main/data/Caltech101/barrel/image_0012.jpg"
+image_path = "/root/event_gen-main/data/Caltech101/ant/image_0014.jpg"
 output_size = 240  # desired output size
 padded_image = resize_with_padding(image_path, output_size)
 plt.imshow(padded_image, cmap='magma')

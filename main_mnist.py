@@ -152,10 +152,10 @@ def train_latent(autoencoder_index):
   prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
 
   #------------load data------------
-  N_MNIST_train_path = prefix +"/data/NMNIST_Train"
-  MNIST_train_path = prefix +"/data/MNIST_Train"
-  N_MNIST_test_path = prefix +"/data/NMNIST_Test"
-  MNIST_test_path = prefix +"/data/MNIST_Test"
+  N_MNIST_train_path = "./data/NMNIST_Train"
+  MNIST_train_path = "./data/MNIST_Train"
+  N_MNIST_test_path = "./data/NMNIST_Test"
+  MNIST_test_path = "./data/MNIST_Test"
   batchsize = 32
   max_n_events = 3324
   seed = 42
@@ -169,7 +169,7 @@ def train_latent(autoencoder_index):
   device = torch.device("cuda:3") if torch.cuda.is_available() else torch.device("cpu")
   print("cuda: "+ str(torch.cuda.is_available()))
   event_encoder = PointNetEncoder(max_n_events = max_n_events,input_dim=5).to(device)
-  event_encoder.load_state_dict(torch.load(prefix+"/models/event_encoder_"+str(autoencoder_index)+".pt"))
+  event_encoder.load_state_dict(torch.load("./checkpoints/event_encoder_"+str(autoencoder_index)+".pt"))
   image_encoder = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=512).to(device)
   params = list(image_encoder.parameters())
   optimizer = torch.optim.Adam(params, lr=0.0001)
@@ -212,11 +212,11 @@ def train_latent(autoencoder_index):
     test_loss_list.append(avg_test_loss)
 
     if ((avg_test_loss)) < min_loss:
-      torch.save(image_encoder.state_dict(), prefix+"/models/image_encoder_"+str(autoencoder_index)+".pt")
+      torch.save(image_encoder.state_dict(), "./checkpoints/image_encoder_"+str(autoencoder_index)+".pt")
       min_loss = (avg_test_loss)
     pbar_training.close()
     print("epoch:", epoch,"loss_train:",avg_train_loss,"loss_test:",avg_test_loss,"loss_sum:",min_loss) 
-    np.save(prefix+"/loss/latent_loss_list_"+str(autoencoder_index)+".npy",[train_loss_list, test_loss_list])
+    np.save("./loss/latent_loss_list_"+str(autoencoder_index)+".npy",[train_loss_list, test_loss_list])
 
 def train_auto(index):  
   cwd = os.getcwd()
@@ -224,10 +224,10 @@ def train_auto(index):
   prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
 
   #------------load data------------
-  N_MNIST_train_path = prefix +"/data/NMNIST_Train"
-  MNIST_train_path = prefix +"/data/MNIST_Train"
-  N_MNIST_test_path = prefix +"/data/NMNIST_Test"
-  MNIST_test_path = prefix +"/data/MNIST_Test"
+  N_MNIST_train_path = "./data/NMNIST_Train"
+  MNIST_train_path = "./data/MNIST_Train"
+  N_MNIST_test_path = "./data/NMNIST_Test"
+  MNIST_test_path = "./data/MNIST_Test"
   batchsize = 32
   max_n_events = 3324
   seed = 42
@@ -312,13 +312,13 @@ def train_auto(index):
     train_loss_list.append(avg_train_loss)
     test_loss_list.append(avg_test_loss)
     if ((avg_test_loss)) < min_loss:
-      torch.save(event_encoder.state_dict(), prefix+"/models/event_encoder_"+str(index)+".pt")
-      torch.save(event_decoder.state_dict(), prefix+"/models/event_decoder_"+str(index)+".pt")
+      torch.save(event_encoder.state_dict(), "./checkpoints/event_encoder_"+str(index)+".pt")
+      torch.save(event_decoder.state_dict(), "./checkpoints/event_decoder_"+str(index)+".pt")
       
       min_loss = (avg_test_loss)
     pbar_training.close()
     print("epoch:", epoch,"loss_train:",avg_train_loss,"loss_test:",avg_test_loss,"loss_sum:",min_loss) 
-    np.save(prefix+"/loss/loss_list_"+str(index)+".npy",[train_loss_list, test_loss_list])
+    np.save("./loss/loss_list_"+str(index)+".npy",[train_loss_list, test_loss_list])
 
 def train_getsize(index):  
   cwd = os.getcwd()
@@ -326,10 +326,10 @@ def train_getsize(index):
   prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
 
   #------------load data------------
-  N_MNIST_train_path = prefix +"/data/NMNIST_Train"
-  MNIST_train_path = prefix +"/data/MNIST_Train"
-  N_MNIST_test_path = prefix +"/data/NMNIST_Test"
-  MNIST_test_path = prefix +"/data/MNIST_Test"
+  N_MNIST_train_path = "./data/NMNIST_Train"
+  MNIST_train_path = "./data/MNIST_Train"
+  N_MNIST_test_path = "./data/NMNIST_Test"
+  MNIST_test_path = "./data/MNIST_Test"
   batchsize = 32
   max_n_events = 3324
   seed = 42
@@ -384,11 +384,11 @@ def train_getsize(index):
     train_loss_list.append(avg_train_loss)
     test_loss_list.append(avg_test_loss)
     if ((avg_test_loss)) < min_loss:
-      torch.save(size_predictor.state_dict(), prefix+"/models/size_predictor_"+str(index)+".pt")
+      torch.save(size_predictor.state_dict(), "./checkpoints/size_predictor_"+str(index)+".pt")
       min_loss = (avg_test_loss)
     pbar_training.close()
     print("epoch:", epoch,"loss_train:",avg_train_loss,"loss_test:",avg_test_loss,"loss_sum:",min_loss) 
-    np.save(prefix+"/loss/size_predictor_loss_list_"+str(index)+".npy",[train_loss_list, test_loss_list])
+    np.save("./loss/size_predictor_loss_list_"+str(index)+".npy",[train_loss_list, test_loss_list])
 
 def delPad_th(predicted,target,label,thr):
   predicted = predicted[np.where(predicted[:,3] < thr)]
@@ -422,8 +422,8 @@ def test_auto(autoencoder_index,size_predictor_index):
   prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
 
   #------------load data------------
-  N_MNIST_test_path = prefix +"/data/NMNIST_Test"
-  MNIST_test_path = prefix +"/data/MNIST_Test"
+  N_MNIST_test_path = "./data/NMNIST_Test"
+  MNIST_test_path = "./data/MNIST_Test"
   batchsize = 32
   max_n_events = 3324
   seed = 42
@@ -439,10 +439,10 @@ def test_auto(autoencoder_index,size_predictor_index):
   size_predicter = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=1).to(device)
   
   #------------load model------------
-  event_encoder.load_state_dict(torch.load(prefix+"/models/event_encoder_"+str(autoencoder_index)+".pt",map_location='cuda:0'))
-  event_decoder.load_state_dict(torch.load(prefix+"/models/event_decoder_"+str(autoencoder_index)+".pt",map_location='cuda:0'))
-  size_predicter.load_state_dict(torch.load(prefix+"/models/size_predictor_"+str(size_predictor_index)+".pt",map_location='cuda:0'))  
-  loss_list = np.load(prefix+"/loss/loss_list_"+str(autoencoder_index)+".npy")
+  event_encoder.load_state_dict(torch.load("./checkpoints/event_encoder_"+str(autoencoder_index)+".pt",map_location='cuda:0'))
+  event_decoder.load_state_dict(torch.load("./checkpoints/event_decoder_"+str(autoencoder_index)+".pt",map_location='cuda:0'))
+  size_predicter.load_state_dict(torch.load("./checkpoints/size_predictor_"+str(size_predictor_index)+".pt",map_location='cuda:0'))  
+  loss_list = np.load("./loss/loss_list_"+str(autoencoder_index)+".npy")
 
   #------------run model------------
   predicted_nEvent_list = []
@@ -485,7 +485,7 @@ def test_auto(autoencoder_index,size_predictor_index):
   plt.plot(predicted_nEvent_list[sorted_indices],'b.',markersize=1,alpha=0.3)    
   plt.plot(target_nEvent_list[sorted_indices],'g.',markersize=1,alpha=0.3)    
   plt.ylabel("nEvent")
-  plt.savefig(prefix + "/output/nEvent.png")  
+  plt.savefig("./output/nEvent.png")  
   plt.figure().clear()
   print('nEvent.png DONE')
   
@@ -571,13 +571,9 @@ def test_auto(autoencoder_index,size_predictor_index):
   print('loss.png DONE')
   
 def test_latent(autoencoder_index,size_predictor_index):   
-  cwd = os.getcwd()
-  print("Current Directory is: ", cwd)
-  prefix = os.path.abspath(os.path.join(cwd, os.pardir))  
-  
   #------------load data------------
-  N_MNIST_test_path = prefix +"/data/NMNIST_Test"
-  MNIST_test_path = prefix +"/data/MNIST_Test"
+  N_MNIST_test_path = "./data/NMNIST_Test"
+  MNIST_test_path = "./data/MNIST_Test"
   batchsize = 32
   max_n_events = 3324
   seed = 42
@@ -593,10 +589,10 @@ def test_latent(autoencoder_index,size_predictor_index):
   size_predicter = imageEncoder(img_channels=1, num_layers=18, block=BasicBlock, num_classes=1).to(device)
 
   #------------load model------------
-  event_decoder.load_state_dict(torch.load(prefix+"/models/event_decoder_"+str(autoencoder_index)+".pt"))
-  size_predicter.load_state_dict(torch.load(prefix+"/models/size_predictor_"+str(size_predictor_index)+".pt"))
-  image_encoder.load_state_dict(torch.load(prefix+"/models/image_encoder_"+str(size_predictor_index)+".pt"))
-  loss_list = np.load(prefix+"/loss/latent_loss_list_"+str(autoencoder_index)+".npy")
+  event_decoder.load_state_dict(torch.load("./checkpoints/event_decoder_"+str(autoencoder_index)+".pt"))
+  size_predicter.load_state_dict(torch.load("./checkpoints/size_predictor_"+str(size_predictor_index)+".pt"))
+  image_encoder.load_state_dict(torch.load("./checkpoints/image_encoder_"+str(size_predictor_index)+".pt"))
+  loss_list = np.load("./loss/latent_loss_list_"+str(autoencoder_index)+".npy")
 
   #------------run model------------
   predicted_nEvent_list = []
@@ -640,7 +636,7 @@ def test_latent(autoencoder_index,size_predictor_index):
   plt.plot(predicted_nEvent_list[sorted_indices],'b.',markersize=1,alpha=0.3)    
   plt.plot(target_nEvent_list[sorted_indices],'g.',markersize=1,alpha=0.3)    
   plt.ylabel("nEvent")
-  plt.savefig(prefix + "/output/nEvent.png")  
+  plt.savefig("./output/nEvent.png")  
   plt.figure().clear()
   print('nEvent.png DONE')
   
@@ -701,7 +697,7 @@ def test_latent(autoencoder_index,size_predictor_index):
     #plt.legend()
     ii += 3
   #plt.tight_layout()
-  plt.savefig(prefix + "/output/parameter.png")  
+  plt.savefig("./output/parameter.png")  
   plt.figure().clear()
   print('parameter.png DONE')
 
@@ -730,7 +726,7 @@ def test_latent(autoencoder_index,size_predictor_index):
 
     ii += 3
   #plt.tight_layout()
-  plt.savefig(prefix + "/output/histogram_new.png")      
+  plt.savefig("./output/histogram_new.png")      
   plt.figure().clear()
   print('histogram_new.png DONE')
       
@@ -742,7 +738,7 @@ def test_latent(autoencoder_index,size_predictor_index):
   plt.xlim([0,100])
   plt.legend()
   plt.tight_layout()
-  plt.savefig(prefix + "/output/loss.png")    
+  plt.savefig("./output/loss.png")    
   print('loss.png DONE')
 
 

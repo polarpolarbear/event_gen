@@ -5,7 +5,7 @@ import tonic
 import pickle
 
 
-path = './caltech_max_x.pickle'
+path = './caltech_nEvent.pickle'
 
 with open(path, 'rb') as handle:
     data = pickle.load(handle)
@@ -29,8 +29,8 @@ for idx,classData in enumerate(data):
     #procent = sum(mask)/len(classData)
     #list.append(procent)
     #print("min:", procent)
-    if np.max(classData) > 5000:
-        list.append(labels[idx])
+    if len(classData) < 50:
+         list.append(labels[idx])
 
 # Plotting a basic histogram
 plt.hist(data)
